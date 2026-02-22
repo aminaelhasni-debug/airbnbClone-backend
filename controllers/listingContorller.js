@@ -3,39 +3,16 @@ const Listing = require("../models/listing");
 const protect = require("../middleware/auth");
 const router = express.Router();
 const upload = require("../config/multerConfig");
-const { cloudinary, hasCloudinaryConfig } = require("../config/cloudinary");
+const { buildImageUrl } = require("../utils/imageUrl");
 
-const uploadImageToCloudinary = (fileBuffer) => {
-  return new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      { folder: "aibnb/listings", resource_type: "image" },
-      (error, result) => {
-        if (error) return reject(error);
-        resolve(result);
-      }
-    );
-    stream.end(fileBuffer);
-  });
-};
-
-const deleteCloudinaryImage = async (publicId) => {
-  if (!publicId) return;
-  try {
-    await cloudinary.uploader.destroy(publicId);
-  } catch (error) {
-    console.error("Error deleting Cloudinary image:", error.message);
-  }
-};
-
-const sanitizeImageUrl = (image) => {
-  if (!image) return "";
-  if (image.startsWith("https://")) return image;
-  return "";
+const toDataUrl = (file) => {
+  if (!file || !file.buffer || !file.mimetype) return "";
+  return `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
 };
 
 const formatListing = (listingDoc) => {
   const listing = listingDoc.toObject ? listingDoc.toObject() : listingDoc;
-  listing.image = sanitizeImageUrl(listing.image);
+  listing.image = buildImageUrl(listing.image);
   return listing;
 };
 
@@ -49,14 +26,8 @@ router.post(
       const { title, description, city, pricePerNight } = req.body;
 
       let image = "";
-      let imagePublicId = "";
       if (req.file) {
-        if (!hasCloudinaryConfig) {
-          return res.status(500).json({ message: "Image upload is not configured on server" });
-        }
-        const uploadedImage = await uploadImageToCloudinary(req.file.buffer);
-        image = uploadedImage.secure_url;
-        imagePublicId = uploadedImage.public_id;
+        image = toDataUrl(req.file);
       }
 
       const listing = new Listing({
@@ -65,7 +36,6 @@ router.post(
         city,
         pricePerNight,
         image,
-        imagePublicId,
         owner: req.user.id,
       });
       await listing.save();
@@ -117,13 +87,7 @@ router.put("/update/listing/:id", protect, upload.single("image"), async (req, r
     Object.assign(listing, req.body);
 
     if (req.file) {
-      if (!hasCloudinaryConfig) {
-        return res.status(500).json({ message: "Image upload is not configured on server" });
-      }
-      const uploadedImage = await uploadImageToCloudinary(req.file.buffer);
-      await deleteCloudinaryImage(listing.imagePublicId);
-      listing.image = uploadedImage.secure_url;
-      listing.imagePublicId = uploadedImage.public_id;
+      listing.image = toDataUrl(req.file);
     }
 
     await listing.save();
@@ -141,8 +105,6 @@ router.delete("/delete/listing/:id", protect, async (req, res) => {
     if (!listing) return res.status(404).json({ message: "Listing not found" });
     if (listing.owner.toString() !== req.user.id)
       return res.status(403).json({ message: "Not authorized" });
-
-    await deleteCloudinaryImage(listing.imagePublicId);
 
     await Listing.deleteOne({ _id: req.params.id });
     res.json({ message: "Listing deleted" });

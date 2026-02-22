@@ -1,9 +1,13 @@
 const { v2: cloudinary } = require("cloudinary");
 
+const missingCloudinaryEnvVars = [
+  "CLOUDINARY_CLOUD_NAME",
+  "CLOUDINARY_API_KEY",
+  "CLOUDINARY_API_SECRET",
+].filter((key) => !process.env[key]);
+
 const hasCloudinaryConfig = Boolean(
-  process.env.CLOUDINARY_CLOUD_NAME &&
-    process.env.CLOUDINARY_API_KEY &&
-    process.env.CLOUDINARY_API_SECRET
+  missingCloudinaryEnvVars.length === 0
 );
 
 if (hasCloudinaryConfig) {
@@ -14,4 +18,4 @@ if (hasCloudinaryConfig) {
   });
 }
 
-module.exports = { cloudinary, hasCloudinaryConfig };
+module.exports = { cloudinary, hasCloudinaryConfig, missingCloudinaryEnvVars };

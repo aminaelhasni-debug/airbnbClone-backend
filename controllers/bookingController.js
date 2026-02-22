@@ -1,6 +1,7 @@
 const express = require("express");
 const Booking = require("../models/booking");
 const protect = require("../middleware/auth");
+const { buildImageUrl } = require("../utils/imageUrl");
 
 const router = express.Router();
 
@@ -34,14 +35,22 @@ router.get("/my/bookings", protect, async (req, res) => {
         select: "title city pricePerNight image",
       });
 
-    const result = bookings.filter(b => b.listing);
-    res.status(200).json(result);
+    const result = bookings.filter((b) => b.listing);
+    const formattedResult = result.map((booking) => {
+      const bookingObj = booking.toObject ? booking.toObject() : booking;
+      if (bookingObj.listing) {
+        bookingObj.listing.image = buildImageUrl(bookingObj.listing.image);
+      }
+      return bookingObj;
+    });
+
+    res.status(200).json(formattedResult);
   } catch (error) {
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// ✅ DELETE booking (NOW REGISTERED)
+// DELETE booking
 router.delete("/booking/:id", protect, async (req, res) => {
   try {
     const booking = await Booking.findById(req.params.id);
