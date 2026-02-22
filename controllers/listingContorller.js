@@ -3,7 +3,7 @@ const Listing = require("../models/listing");
 const protect = require("../middleware/auth");
 const router = express.Router();
 const upload = require("../config/multerConfig");
-const cloudinary = require("../config/cloudinary");
+const { cloudinary, hasCloudinaryConfig } = require("../config/cloudinary");
 
 const uploadImageToCloudinary = (fileBuffer) => {
   return new Promise((resolve, reject) => {
@@ -51,6 +51,9 @@ router.post(
       let image = "";
       let imagePublicId = "";
       if (req.file) {
+        if (!hasCloudinaryConfig) {
+          return res.status(500).json({ message: "Image upload is not configured on server" });
+        }
         const uploadedImage = await uploadImageToCloudinary(req.file.buffer);
         image = uploadedImage.secure_url;
         imagePublicId = uploadedImage.public_id;
@@ -69,7 +72,7 @@ router.post(
       res.status(201).json(formatListing(listing));
     } catch (err) {
       console.error(err);
-      res.status(500).json({ message: "Server error" });
+      res.status(500).json({ message: "Server error", error: err.message });
     }
   }
 );
@@ -99,7 +102,7 @@ router.get("/listing/:id", async (req, res) => {
     res.json(formatListing(listing));
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 });
 
@@ -114,6 +117,9 @@ router.put("/update/listing/:id", protect, upload.single("image"), async (req, r
     Object.assign(listing, req.body);
 
     if (req.file) {
+      if (!hasCloudinaryConfig) {
+        return res.status(500).json({ message: "Image upload is not configured on server" });
+      }
       const uploadedImage = await uploadImageToCloudinary(req.file.buffer);
       await deleteCloudinaryImage(listing.imagePublicId);
       listing.image = uploadedImage.secure_url;
@@ -124,7 +130,7 @@ router.put("/update/listing/:id", protect, upload.single("image"), async (req, r
     res.json(formatListing(listing));
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 });
 
@@ -142,7 +148,7 @@ router.delete("/delete/listing/:id", protect, async (req, res) => {
     res.json({ message: "Listing deleted" });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 });
 
