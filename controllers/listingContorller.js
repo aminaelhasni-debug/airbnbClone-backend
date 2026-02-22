@@ -3,19 +3,40 @@ const Listing = require("../models/listing");
 const protect = require("../middleware/auth");
 const router = express.Router();
 const upload = require("../config/multerConfig");
-const fs = require("fs");
-const path = require("path");
+const cloudinary = require("../config/cloudinary");
 
+const uploadImageToCloudinary = (fileBuffer) => {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: "aibnb/listings", resource_type: "image" },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+    stream.end(fileBuffer);
+  });
+};
 
-// Helper to delete old image
-const deleteImageFile = (imagePath) => {
-  if (!imagePath) return;
+const deleteCloudinaryImage = async (publicId) => {
+  if (!publicId) return;
   try {
-    const fullPath = path.join(__dirname, "..", imagePath);
-    if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
-  } catch (err) {
-    console.error("Error deleting image:", err);
+    await cloudinary.uploader.destroy(publicId);
+  } catch (error) {
+    console.error("Error deleting Cloudinary image:", error.message);
   }
+};
+
+const sanitizeImageUrl = (image) => {
+  if (!image) return "";
+  if (image.startsWith("https://")) return image;
+  return "";
+};
+
+const formatListing = (listingDoc) => {
+  const listing = listingDoc.toObject ? listingDoc.toObject() : listingDoc;
+  listing.image = sanitizeImageUrl(listing.image);
+  return listing;
 };
 
 // CREATE listing with image
@@ -26,16 +47,26 @@ router.post(
   async (req, res) => {
     try {
       const { title, description, city, pricePerNight } = req.body;
+
+      let image = "";
+      let imagePublicId = "";
+      if (req.file) {
+        const uploadedImage = await uploadImageToCloudinary(req.file.buffer);
+        image = uploadedImage.secure_url;
+        imagePublicId = uploadedImage.public_id;
+      }
+
       const listing = new Listing({
         title,
         description,
         city,
         pricePerNight,
-        image: req.file ? `/uploads/${req.file.filename}` : "",
+        image,
+        imagePublicId,
         owner: req.user.id,
       });
       await listing.save();
-      res.status(201).json(listing);
+      res.status(201).json(formatListing(listing));
     } catch (err) {
       console.error(err);
       res.status(500).json({ message: "Server error" });
@@ -47,7 +78,7 @@ router.post(
 router.get("/listings", async (req, res) => {
   try {
     const listings = await Listing.find().populate("owner", "name email");
-    res.json(listings);
+    res.json(listings.map(formatListing));
   } catch (err) {
     console.error("Error fetching listings:", err);
     res.status(500).json({ message: "Failed to fetch listings", error: err.message });
@@ -57,7 +88,7 @@ router.get("/listings", async (req, res) => {
 // GET my listings
 router.get("/my/listings", protect, async (req, res) => {
   const listings = await Listing.find({ owner: req.user.id });
-  res.json(listings);
+  res.json(listings.map(formatListing));
 });
 
 // GET single listing by id
@@ -65,7 +96,7 @@ router.get("/listing/:id", async (req, res) => {
   try {
     const listing = await Listing.findById(req.params.id).populate("owner", "name email");
     if (!listing) return res.status(404).json({ message: "Listing not found" });
-    res.json(listing);
+    res.json(formatListing(listing));
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error" });
@@ -80,14 +111,17 @@ router.put("/update/listing/:id", protect, upload.single("image"), async (req, r
     if (listing.owner.toString() !== req.user.id)
       return res.status(403).json({ message: "Not authorized" });
 
-    // delete old image if new one uploaded
-    if (req.file && listing.image) deleteImageFile(listing.image);
-
     Object.assign(listing, req.body);
-    if (req.file) listing.image = `/uploads/${req.file.filename}`;
+
+    if (req.file) {
+      const uploadedImage = await uploadImageToCloudinary(req.file.buffer);
+      await deleteCloudinaryImage(listing.imagePublicId);
+      listing.image = uploadedImage.secure_url;
+      listing.imagePublicId = uploadedImage.public_id;
+    }
 
     await listing.save();
-    res.json(listing);
+    res.json(formatListing(listing));
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error" });
@@ -102,8 +136,7 @@ router.delete("/delete/listing/:id", protect, async (req, res) => {
     if (listing.owner.toString() !== req.user.id)
       return res.status(403).json({ message: "Not authorized" });
 
-    // delete image file
-    if (listing.image) deleteImageFile(listing.image);
+    await deleteCloudinaryImage(listing.imagePublicId);
 
     await Listing.deleteOne({ _id: req.params.id });
     res.json({ message: "Listing deleted" });

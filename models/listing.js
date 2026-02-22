@@ -6,6 +6,7 @@ const listingSchema = new mongoose.Schema({
   city: { type: String, required: true },
   pricePerNight: { type: Number, required: true },
   image: { type: String }, // URL to the image
+  imagePublicId: { type: String },
   owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
 }, { timestamps: true });
 
