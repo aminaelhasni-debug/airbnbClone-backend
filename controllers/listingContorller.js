@@ -10,6 +10,26 @@ const toDataUrl = (file) => {
   return `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
 };
 
+const extractIncomingImage = (req) => {
+  if (req.file) return toDataUrl(req.file);
+
+  if (Array.isArray(req.files) && req.files.length > 0) {
+    return toDataUrl(req.files[0]);
+  }
+
+  const rawImage = typeof req.body?.image === "string" ? req.body.image.trim() : "";
+  if (
+    rawImage.startsWith("data:image/") ||
+    rawImage.startsWith("https://") ||
+    rawImage.startsWith("http://") ||
+    rawImage.startsWith("/uploads/")
+  ) {
+    return rawImage;
+  }
+
+  return "";
+};
+
 const formatListing = (listingDoc) => {
   const listing = listingDoc.toObject ? listingDoc.toObject() : listingDoc;
   listing.image = buildImageUrl(listing.image);
@@ -20,15 +40,11 @@ const formatListing = (listingDoc) => {
 router.post(
   "/create/listing",
   protect,
-  upload.single("image"),
+  upload.any(),
   async (req, res) => {
     try {
       const { title, description, city, pricePerNight } = req.body;
-
-      let image = "";
-      if (req.file) {
-        image = toDataUrl(req.file);
-      }
+      const image = extractIncomingImage(req);
 
       const listing = new Listing({
         title,
@@ -77,18 +93,19 @@ router.get("/listing/:id", async (req, res) => {
 });
 
 // UPDATE listing (optional: handle image)
-router.put("/update/listing/:id", protect, upload.single("image"), async (req, res) => {
+router.put("/update/listing/:id", protect, upload.any(), async (req, res) => {
   try {
     const listing = await Listing.findById(req.params.id);
     if (!listing) return res.status(404).json({ message: "Listing not found" });
     if (listing.owner.toString() !== req.user.id)
       return res.status(403).json({ message: "Not authorized" });
 
-    Object.assign(listing, req.body);
+    const updateData = { ...req.body };
+    delete updateData.image;
+    Object.assign(listing, updateData);
 
-    if (req.file) {
-      listing.image = toDataUrl(req.file);
-    }
+    const incomingImage = extractIncomingImage(req);
+    if (incomingImage) listing.image = incomingImage;
 
     await listing.save();
     res.json(formatListing(listing));
