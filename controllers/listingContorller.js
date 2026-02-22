@@ -15,9 +15,26 @@ const deleteCloudinaryImage = async (publicId) => {
   }
 };
 
-const extractIncomingImage = (req) => {
-  if (req.file && req.file.path) return req.file.path;
+const uploadImageToCloudinary = (file) => {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.buffer) return resolve(null);
 
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: "aibnb/listings",
+        resource_type: "image",
+      },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+
+    stream.end(file.buffer);
+  });
+};
+
+const extractIncomingImage = (req) => {
   const rawImage = typeof req.body?.image === "string" ? req.body.image.trim() : "";
   if (
     rawImage.startsWith("data:image/") ||
@@ -53,8 +70,14 @@ router.post(
         });
       }
 
-      const image = extractIncomingImage(req);
-      const imagePublicId = req.file && req.file.filename ? req.file.filename : "";
+      let image = extractIncomingImage(req);
+      let imagePublicId = "";
+
+      if (req.file) {
+        const uploadedImage = await uploadImageToCloudinary(req.file);
+        image = uploadedImage?.secure_url || image;
+        imagePublicId = uploadedImage?.public_id || "";
+      }
 
       const listing = new Listing({
         title,
@@ -123,10 +146,15 @@ router.put("/update/listing/:id", protect, upload.single("image"), async (req, r
     }
 
     const incomingImage = extractIncomingImage(req);
-    if (incomingImage) {
-      await deleteCloudinaryImage(listing.imagePublicId);
+    if (req.file) {
+      const uploadedImage = await uploadImageToCloudinary(req.file);
+      if (uploadedImage?.secure_url) {
+        await deleteCloudinaryImage(listing.imagePublicId);
+        listing.image = uploadedImage.secure_url;
+        listing.imagePublicId = uploadedImage.public_id || listing.imagePublicId;
+      }
+    } else if (incomingImage) {
       listing.image = incomingImage;
-      listing.imagePublicId = req.file && req.file.filename ? req.file.filename : listing.imagePublicId;
     }
 
     await listing.save();

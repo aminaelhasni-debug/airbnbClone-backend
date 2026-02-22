@@ -1,17 +1,6 @@
 const multer = require("multer");
-const { CloudinaryStorage } = require("multer-storage-cloudinary");
-const { cloudinary, hasCloudinaryConfig } = require("./cloudinary");
 
-const storage = hasCloudinaryConfig
-  ? new CloudinaryStorage({
-      cloudinary,
-      params: async (req, file) => ({
-        folder: "aibnb/listings",
-        allowed_formats: ["jpg", "jpeg", "png", "webp", "gif"],
-        public_id: `listing-${Date.now()}`,
-      }),
-    })
-  : multer.memoryStorage();
+const storage = multer.memoryStorage();
 
 const upload = multer({
   storage,
