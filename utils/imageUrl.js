@@ -7,14 +7,31 @@ const DEFAULT_IMAGE_DATA_URL =
 const buildImageUrl = (image) => {
   if (!image) return DEFAULT_IMAGE_DATA_URL;
 
-  if (image.startsWith("https://")) return image;
-  if (image.startsWith("data:image/")) return image;
+  const value = String(image).trim();
+  if (!value) return DEFAULT_IMAGE_DATA_URL;
 
-  if (image.startsWith("/uploads/")) {
+  if (value.startsWith("data:image/")) return value;
+  if (value.startsWith("https://")) return value;
+  if (value.startsWith("http://")) return value;
+
+  if (value.startsWith("/uploads/")) {
     const publicBaseUrl = process.env.PUBLIC_BASE_URL || process.env.API_BASE_URL || "";
     if (publicBaseUrl) {
-      return `${publicBaseUrl.replace(/\/$/, "")}${image}`;
+      return `${publicBaseUrl.replace(/\/$/, "")}${value}`;
     }
+  }
+
+  // Handle legacy absolute local URLs like "http://localhost:5000/uploads/..."
+  try {
+    const parsed = new URL(value);
+    if (parsed.pathname.startsWith("/uploads/")) {
+      const publicBaseUrl = process.env.PUBLIC_BASE_URL || process.env.API_BASE_URL || "";
+      if (publicBaseUrl) {
+        return `${publicBaseUrl.replace(/\/$/, "")}${parsed.pathname}`;
+      }
+    }
+  } catch (_) {
+    // Not a valid URL string; fallback below.
   }
 
   return DEFAULT_IMAGE_DATA_URL;
