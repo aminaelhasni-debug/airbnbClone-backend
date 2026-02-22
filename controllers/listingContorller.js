@@ -45,8 +45,13 @@ router.post(
 
 // GET all listings
 router.get("/listings", async (req, res) => {
-  const listings = await Listing.find().populate("owner", "name email");
-  res.json(listings);
+  try {
+    const listings = await Listing.find().populate("owner", "name email");
+    res.json(listings);
+  } catch (err) {
+    console.error("Error fetching listings:", err);
+    res.status(500).json({ message: "Failed to fetch listings", error: err.message });
+  }
 });
 
 // GET my listings
@@ -100,7 +105,7 @@ router.delete("/delete/listing/:id", protect, async (req, res) => {
     // delete image file
     if (listing.image) deleteImageFile(listing.image);
 
-    await listing.remove();
+    await Listing.deleteOne({ _id: req.params.id });
     res.json({ message: "Listing deleted" });
   } catch (err) {
     console.error(err);
