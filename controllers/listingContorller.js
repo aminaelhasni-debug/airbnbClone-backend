@@ -3,7 +3,7 @@ const Listing = require("../models/listing");
 const protect = require("../middleware/auth");
 const router = express.Router();
 const upload = require("../config/multerConfig");
-const { cloudinary, hasCloudinaryConfig, missingCloudinaryEnvVars } = require("../config/cloudinary");
+const { cloudinary, hasCloudinaryConfig } = require("../config/cloudinary");
 const { buildImageUrl } = require("../utils/imageUrl");
 
 const deleteCloudinaryImage = async (publicId) => {
@@ -13,6 +13,11 @@ const deleteCloudinaryImage = async (publicId) => {
   } catch (error) {
     console.error("Cloudinary delete error:", error.message);
   }
+};
+
+const toDataUrl = (file) => {
+  if (!file || !file.buffer || !file.mimetype) return "";
+  return `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
 };
 
 const uploadImageToCloudinary = (file) => {
@@ -63,20 +68,22 @@ router.post(
     try {
       const { title, description, city, pricePerNight } = req.body;
 
-      if (req.file && !hasCloudinaryConfig) {
-        return res.status(500).json({
-          message: "Image upload is not configured on server",
-          missingEnv: missingCloudinaryEnvVars,
-        });
-      }
-
       let image = extractIncomingImage(req);
       let imagePublicId = "";
 
       if (req.file) {
-        const uploadedImage = await uploadImageToCloudinary(req.file);
-        image = uploadedImage?.secure_url || image;
-        imagePublicId = uploadedImage?.public_id || "";
+        if (hasCloudinaryConfig) {
+          try {
+            const uploadedImage = await uploadImageToCloudinary(req.file);
+            image = uploadedImage?.secure_url || image;
+            imagePublicId = uploadedImage?.public_id || "";
+          } catch (uploadError) {
+            console.error("Cloudinary upload failed, falling back to data URL:", uploadError.message);
+            image = toDataUrl(req.file);
+          }
+        } else {
+          image = toDataUrl(req.file);
+        }
       }
 
       const listing = new Listing({
@@ -138,20 +145,24 @@ router.put("/update/listing/:id", protect, upload.single("image"), async (req, r
     delete updateData.image;
     Object.assign(listing, updateData);
 
-    if (req.file && !hasCloudinaryConfig) {
-      return res.status(500).json({
-        message: "Image upload is not configured on server",
-        missingEnv: missingCloudinaryEnvVars,
-      });
-    }
-
     const incomingImage = extractIncomingImage(req);
     if (req.file) {
-      const uploadedImage = await uploadImageToCloudinary(req.file);
-      if (uploadedImage?.secure_url) {
-        await deleteCloudinaryImage(listing.imagePublicId);
-        listing.image = uploadedImage.secure_url;
-        listing.imagePublicId = uploadedImage.public_id || listing.imagePublicId;
+      if (hasCloudinaryConfig) {
+        try {
+          const uploadedImage = await uploadImageToCloudinary(req.file);
+          if (uploadedImage?.secure_url) {
+            await deleteCloudinaryImage(listing.imagePublicId);
+            listing.image = uploadedImage.secure_url;
+            listing.imagePublicId = uploadedImage.public_id || listing.imagePublicId;
+          }
+        } catch (uploadError) {
+          console.error("Cloudinary upload failed, falling back to data URL:", uploadError.message);
+          listing.image = toDataUrl(req.file);
+          listing.imagePublicId = "";
+        }
+      } else {
+        listing.image = toDataUrl(req.file);
+        listing.imagePublicId = "";
       }
     } else if (incomingImage) {
       listing.image = incomingImage;
