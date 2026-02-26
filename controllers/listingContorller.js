@@ -1,4 +1,6 @@
 const express = require("express");
+const fs = require("fs");
+const path = require("path");
 const Listing = require("../models/listing");
 const protect = require("../middleware/auth");
 const router = express.Router();
@@ -15,28 +17,65 @@ const deleteCloudinaryImage = async (publicId) => {
   }
 };
 
-const toDataUrl = (file) => {
-  if (!file || !file.buffer || !file.mimetype) return "";
-  return `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
-};
-
 const uploadImageToCloudinary = (file) => {
   return new Promise((resolve, reject) => {
-    if (!file || !file.buffer) return resolve(null);
+    if (!file || !file.path) return resolve(null);
 
-    const stream = cloudinary.uploader.upload_stream(
-      {
+    cloudinary.uploader
+      .upload(file.path, {
         folder: "aibnb/listings",
         resource_type: "image",
-      },
-      (error, result) => {
-        if (error) return reject(error);
-        resolve(result);
-      }
-    );
-
-    stream.end(file.buffer);
+      })
+      .then(resolve)
+      .catch(reject);
   });
+};
+
+const removeLocalUpload = (storedImagePath) => {
+  if (!storedImagePath || typeof storedImagePath !== "string") return;
+  if (!storedImagePath.startsWith("/uploads/")) return;
+
+  const filename = path.basename(storedImagePath);
+  const absolutePath = path.join(__dirname, "..", "uploads", filename);
+  fs.unlink(absolutePath, () => {});
+};
+
+const storeDataUrlImage = (dataUrl) => {
+  if (!dataUrl || typeof dataUrl !== "string") return "";
+  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) return "";
+
+  const mimeType = match[1];
+  const base64Payload = match[2];
+  const extByMime = {
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+    "image/bmp": ".bmp",
+    "image/svg+xml": ".svg",
+    "image/avif": ".avif",
+  };
+
+  try {
+    const extension = extByMime[mimeType] || "";
+    const fileName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${extension}`;
+    const uploadPath = path.join(__dirname, "..", "uploads", fileName);
+    fs.writeFileSync(uploadPath, Buffer.from(base64Payload, "base64"));
+    return `/uploads/${fileName}`;
+  } catch (error) {
+    console.error("Failed to persist data URL image:", error.message);
+    return "";
+  }
+};
+
+const normalizeIncomingImage = (incomingImage) => {
+  if (!incomingImage) return "";
+  if (incomingImage.startsWith("data:image/")) {
+    return storeDataUrlImage(incomingImage);
+  }
+  return incomingImage;
 };
 
 const extractIncomingImage = (req) => {
@@ -45,7 +84,8 @@ const extractIncomingImage = (req) => {
     rawImage.startsWith("data:image/") ||
     rawImage.startsWith("https://") ||
     rawImage.startsWith("http://") ||
-    rawImage.startsWith("/uploads/")
+    rawImage.startsWith("/uploads/") ||
+    rawImage.startsWith("uploads/")
   ) {
     return rawImage;
   }
@@ -68,21 +108,23 @@ router.post(
     try {
       const { title, description, city, pricePerNight } = req.body;
 
-      let image = extractIncomingImage(req);
+      let image = normalizeIncomingImage(extractIncomingImage(req));
       let imagePublicId = "";
 
       if (req.file) {
+        const newLocalImage = `/uploads/${req.file.filename}`;
+        image = newLocalImage;
         if (hasCloudinaryConfig) {
           try {
             const uploadedImage = await uploadImageToCloudinary(req.file);
-            image = uploadedImage?.secure_url || image;
-            imagePublicId = uploadedImage?.public_id || "";
+            if (uploadedImage?.secure_url) {
+              image = uploadedImage.secure_url;
+              imagePublicId = uploadedImage?.public_id || "";
+              removeLocalUpload(newLocalImage);
+            }
           } catch (uploadError) {
-            console.error("Cloudinary upload failed, falling back to data URL:", uploadError.message);
-            image = toDataUrl(req.file);
+            console.error("Cloudinary upload failed, falling back to local file:", uploadError.message);
           }
-        } else {
-          image = toDataUrl(req.file);
         }
       }
 
@@ -147,25 +189,47 @@ router.put("/update/listing/:id", protect, upload.single("image"), async (req, r
 
     const incomingImage = extractIncomingImage(req);
     if (req.file) {
+      const newLocalImage = `/uploads/${req.file.filename}`;
       if (hasCloudinaryConfig) {
         try {
           const uploadedImage = await uploadImageToCloudinary(req.file);
           if (uploadedImage?.secure_url) {
             await deleteCloudinaryImage(listing.imagePublicId);
+            removeLocalUpload(newLocalImage);
+            removeLocalUpload(listing.image);
             listing.image = uploadedImage.secure_url;
             listing.imagePublicId = uploadedImage.public_id || listing.imagePublicId;
+          } else {
+            await deleteCloudinaryImage(listing.imagePublicId);
+            removeLocalUpload(listing.image);
+            listing.image = newLocalImage;
+            listing.imagePublicId = "";
           }
         } catch (uploadError) {
-          console.error("Cloudinary upload failed, falling back to data URL:", uploadError.message);
-          listing.image = toDataUrl(req.file);
+          console.error("Cloudinary upload failed, falling back to local file:", uploadError.message);
+          await deleteCloudinaryImage(listing.imagePublicId);
+          removeLocalUpload(listing.image);
+          listing.image = newLocalImage;
           listing.imagePublicId = "";
         }
       } else {
-        listing.image = toDataUrl(req.file);
+        await deleteCloudinaryImage(listing.imagePublicId);
+        removeLocalUpload(listing.image);
+        listing.image = newLocalImage;
         listing.imagePublicId = "";
       }
     } else if (incomingImage) {
-      listing.image = incomingImage;
+      const normalizedIncomingImage = normalizeIncomingImage(incomingImage);
+      if (!normalizedIncomingImage) {
+        return res.status(400).json({ message: "Invalid image payload" });
+      }
+
+      if (normalizedIncomingImage !== listing.image) {
+        await deleteCloudinaryImage(listing.imagePublicId);
+        removeLocalUpload(listing.image);
+        listing.imagePublicId = "";
+      }
+      listing.image = normalizedIncomingImage;
     }
 
     await listing.save();
@@ -185,6 +249,7 @@ router.delete("/delete/listing/:id", protect, async (req, res) => {
       return res.status(403).json({ message: "Not authorized" });
 
     await deleteCloudinaryImage(listing.imagePublicId);
+    removeLocalUpload(listing.image);
     await Listing.deleteOne({ _id: req.params.id });
     res.json({ message: "Listing deleted" });
   } catch (err) {
@@ -194,5 +259,3 @@ router.delete("/delete/listing/:id", protect, async (req, res) => {
 });
 
 module.exports = router;
-
-

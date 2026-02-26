@@ -1,40 +1,48 @@
-const DEFAULT_IMAGE_DATA_URL =
-  "data:image/svg+xml;utf8," +
-  encodeURIComponent(
-    "<svg xmlns='http://www.w3.org/2000/svg' width='400' height='250' viewBox='0 0 400 250'><rect width='400' height='250' fill='#e5e7eb'/><text x='200' y='125' font-family='Arial, sans-serif' font-size='20' fill='#6b7280' text-anchor='middle' dominant-baseline='middle'>No Image</text></svg>"
-  );
+const DEFAULT_IMAGE_URL =
+  process.env.DEFAULT_LISTING_IMAGE_URL ||
+  "https://placehold.co/1200x800.jpg?text=Listing+Image";
+
+const resolvePublicBaseUrl = () => {
+  const envBase = process.env.PUBLIC_BASE_URL || process.env.API_BASE_URL;
+  if (envBase) return envBase.replace(/\/$/, "");
+  const port = process.env.PORT || "5000";
+  return `http://localhost:${port}`;
+};
 
 const buildImageUrl = (image) => {
-  if (!image) return DEFAULT_IMAGE_DATA_URL;
+  if (!image) return DEFAULT_IMAGE_URL;
 
   const value = String(image).trim();
-  if (!value) return DEFAULT_IMAGE_DATA_URL;
+  if (!value) return DEFAULT_IMAGE_URL;
+
+  // Legacy placeholder payload used by earlier backend versions.
+  if (value.startsWith("data:image/svg+xml")) return DEFAULT_IMAGE_URL;
 
   if (value.startsWith("data:image/")) return value;
   if (value.startsWith("https://")) return value;
   if (value.startsWith("http://")) return value;
 
   if (value.startsWith("/uploads/")) {
-    const publicBaseUrl = process.env.PUBLIC_BASE_URL || process.env.API_BASE_URL || "";
-    if (publicBaseUrl) {
-      return `${publicBaseUrl.replace(/\/$/, "")}${value}`;
-    }
+    return `${resolvePublicBaseUrl()}${value}`;
+  }
+  if (value.startsWith("uploads/")) {
+    return `${resolvePublicBaseUrl()}/${value}`;
+  }
+  if (/^[^/\\]+\.(jpg|jpeg|png|webp|gif|bmp|svg|avif)$/i.test(value)) {
+    return `${resolvePublicBaseUrl()}/uploads/${value}`;
   }
 
   // Handle legacy absolute local URLs like "http://localhost:5000/uploads/..."
   try {
     const parsed = new URL(value);
     if (parsed.pathname.startsWith("/uploads/")) {
-      const publicBaseUrl = process.env.PUBLIC_BASE_URL || process.env.API_BASE_URL || "";
-      if (publicBaseUrl) {
-        return `${publicBaseUrl.replace(/\/$/, "")}${parsed.pathname}`;
-      }
+      return `${resolvePublicBaseUrl()}${parsed.pathname}`;
     }
   } catch (_) {
     // Not a valid URL string; fallback below.
   }
 
-  return DEFAULT_IMAGE_DATA_URL;
+  return DEFAULT_IMAGE_URL;
 };
 
 module.exports = { buildImageUrl };
