@@ -38,7 +38,6 @@ const connectToDatabase = async () => {
 
 app.use(
   helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" },
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
@@ -50,19 +49,9 @@ app.use(
   })
 );
 
-// Allow API requests from frontend
-app.use(cors({
-  origin: "http://localhost:5173", // frontend URL
-  credentials: true
-}));
-
+app.use(cors());
 app.use(express.json());
-
-// Enable CORS on static files too
-app.use("/uploads", cors({
-  origin: "http://localhost:5173", // frontend URL
-  credentials: true
-}), express.static(path.join(__dirname, "uploads")));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 connectToDatabase()
   .then(() => console.log("MongoDB connected successfully"))
