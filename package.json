@@ -6,7 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "nodemon index.js",
-    "migrate:listing-images": "node scripts/migrateListingImagesToUploads.js"
+    "migrate:listing-images": "node scripts/migrateListingImagesToCloudinary.js"
   },
   "keywords": [],
   "author": "",

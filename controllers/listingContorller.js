@@ -8,6 +8,7 @@ const upload = require("../config/multerConfig");
 const { cloudinary, hasCloudinaryConfig } = require("../config/cloudinary");
 const { buildImageUrl } = require("../utils/imageUrl");
 const { uploadsDir, ensureUploadsDir } = require("../config/uploadPaths");
+const isProduction = process.env.NODE_ENV === "production";
 
 const deleteCloudinaryImage = async (publicId) => {
   if (!publicId || !hasCloudinaryConfig) return;
@@ -125,8 +126,18 @@ router.post(
               removeLocalUpload(newLocalImage);
             }
           } catch (uploadError) {
+            if (isProduction) {
+              return res.status(502).json({
+                message: "Image upload failed. Please try again.",
+                error: uploadError.message,
+              });
+            }
             console.error("Cloudinary upload failed, falling back to local file:", uploadError.message);
           }
+        } else if (isProduction) {
+          return res.status(500).json({
+            message: "Image storage is not configured on server.",
+          });
         }
       }
 
@@ -208,12 +219,22 @@ router.put("/update/listing/:id", protect, upload.single("image"), async (req, r
             listing.imagePublicId = "";
           }
         } catch (uploadError) {
+          if (isProduction) {
+            return res.status(502).json({
+              message: "Image upload failed. Please try again.",
+              error: uploadError.message,
+            });
+          }
           console.error("Cloudinary upload failed, falling back to local file:", uploadError.message);
           await deleteCloudinaryImage(listing.imagePublicId);
           removeLocalUpload(listing.image);
           listing.image = newLocalImage;
           listing.imagePublicId = "";
         }
+      } else if (isProduction) {
+        return res.status(500).json({
+          message: "Image storage is not configured on server.",
+        });
       } else {
         await deleteCloudinaryImage(listing.imagePublicId);
         removeLocalUpload(listing.image);
