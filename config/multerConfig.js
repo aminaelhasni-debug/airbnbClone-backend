@@ -1,9 +1,12 @@
 // upload.js
 const multer = require("multer");
+const { uploadsDir, ensureUploadsDir } = require("./uploadPaths");
+
+ensureUploadsDir();
 
 // Fallback for local dev
 const localStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, "uploads/"),
+  destination: (req, file, cb) => cb(null, uploadsDir),
   filename: (req, file, cb) => {
     const ext = file.originalname.split(".").pop();
     cb(null, `${Date.now()}-${Math.round(Math.random() * 1e9)}.${ext}`);

@@ -7,6 +7,7 @@ const router = express.Router();
 const upload = require("../config/multerConfig");
 const { cloudinary, hasCloudinaryConfig } = require("../config/cloudinary");
 const { buildImageUrl } = require("../utils/imageUrl");
+const { uploadsDir, ensureUploadsDir } = require("../config/uploadPaths");
 
 const deleteCloudinaryImage = async (publicId) => {
   if (!publicId || !hasCloudinaryConfig) return;
@@ -36,7 +37,7 @@ const removeLocalUpload = (storedImagePath) => {
   if (!storedImagePath.startsWith("/uploads/")) return;
 
   const filename = path.basename(storedImagePath);
-  const absolutePath = path.join(__dirname, "..", "uploads", filename);
+  const absolutePath = path.join(uploadsDir, filename);
   fs.unlink(absolutePath, () => {});
 };
 
@@ -59,9 +60,10 @@ const storeDataUrlImage = (dataUrl) => {
   };
 
   try {
+    ensureUploadsDir();
     const extension = extByMime[mimeType] || "";
     const fileName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${extension}`;
-    const uploadPath = path.join(__dirname, "..", "uploads", fileName);
+    const uploadPath = path.join(uploadsDir, fileName);
     fs.writeFileSync(uploadPath, Buffer.from(base64Payload, "base64"));
     return `/uploads/${fileName}`;
   } catch (error) {

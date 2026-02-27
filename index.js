@@ -6,7 +6,7 @@ const cors = require("cors");
 const userController = require("./controllers/userController");
 const listingController = require("./controllers/listingContorller");
 const bookingController = require("./controllers/bookingController");
-const path = require("path");
+const { uploadsDir, ensureUploadsDir } = require("./config/uploadPaths");
 
 const app = express();
 const MONGODB_URI = process.env.MONGODB_URI || process.env.dbconnect;
@@ -51,6 +51,7 @@ app.use(
 
 app.use(cors());
 app.use(express.json());
+ensureUploadsDir();
 app.use(
   "/uploads",
   (req, res, next) => {
@@ -58,7 +59,7 @@ app.use(
     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
     next();
   },
-  express.static(path.join(__dirname, "uploads"), {
+  express.static(uploadsDir, {
     etag: false,
     lastModified: false,
     maxAge: 0,
