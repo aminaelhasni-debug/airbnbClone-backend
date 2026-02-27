@@ -4,10 +4,8 @@ const DEFAULT_IMAGE_URL =
 
 const resolvePublicBaseUrl = () => {
   const envBase = process.env.PUBLIC_BASE_URL || process.env.API_BASE_URL;
-  if (envBase) return envBase.replace(/\/$/, "");
 
-  // Never emit localhost URLs in production responses.
-  if (process.env.NODE_ENV === "production") return "";
+  if (envBase) return envBase.replace(/\/$/, "");
 
   const port = process.env.PORT || "5000";
   return `http://localhost:${port}`;
@@ -19,35 +17,36 @@ const buildImageUrl = (image) => {
   const value = String(image).trim();
   if (!value) return DEFAULT_IMAGE_URL;
 
-  // Legacy placeholder payload used by earlier backend versions.
-  if (value.startsWith("data:image/svg+xml")) return DEFAULT_IMAGE_URL;
+  // Old SVG placeholder cleanup
+  if (value.startsWith("data:image/svg+xml")) {
+    return DEFAULT_IMAGE_URL;
+  }
 
-  if (value.startsWith("data:image/")) return value;
-  if (value.startsWith("https://")) return value;
-  if (value.startsWith("http://")) return value;
+  // If already a full Cloudinary or external URL
+  if (value.startsWith("https://") || value.startsWith("http://")) {
+    return value;
+  }
 
+  // Base64 image (rare case)
+  if (value.startsWith("data:image/")) {
+    return value;
+  }
+
+  const baseUrl = resolvePublicBaseUrl();
+
+  // If stored as "/uploads/file.jpg"
   if (value.startsWith("/uploads/")) {
-    const baseUrl = resolvePublicBaseUrl();
-    return baseUrl ? `${baseUrl}${value}` : DEFAULT_IMAGE_URL;
-  }
-  if (value.startsWith("uploads/")) {
-    const baseUrl = resolvePublicBaseUrl();
-    return baseUrl ? `${baseUrl}/${value}` : DEFAULT_IMAGE_URL;
-  }
-  if (/^[^/\\]+\.(jpg|jpeg|png|webp|gif|bmp|svg|avif)$/i.test(value)) {
-    const baseUrl = resolvePublicBaseUrl();
-    return baseUrl ? `${baseUrl}/uploads/${value}` : DEFAULT_IMAGE_URL;
+    return `${baseUrl}${value}`;
   }
 
-  // Handle legacy absolute local URLs like "http://localhost:5000/uploads/..."
-  try {
-    const parsed = new URL(value);
-    if (parsed.pathname.startsWith("/uploads/")) {
-      const baseUrl = resolvePublicBaseUrl();
-      return baseUrl ? `${baseUrl}${parsed.pathname}` : DEFAULT_IMAGE_URL;
-    }
-  } catch (_) {
-    // Not a valid URL string; fallback below.
+  // If stored as "uploads/file.jpg"
+  if (value.startsWith("uploads/")) {
+    return `${baseUrl}/${value}`;
+  }
+
+  // If stored as just "file.jpg"
+  if (/^[^/\\]+\.(jpg|jpeg|png|webp|gif|bmp|svg|avif)$/i.test(value)) {
+    return `${baseUrl}/uploads/${value}`;
   }
 
   return DEFAULT_IMAGE_URL;
