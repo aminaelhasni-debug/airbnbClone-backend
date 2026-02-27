@@ -2,16 +2,25 @@ const DEFAULT_IMAGE_URL =
   process.env.DEFAULT_LISTING_IMAGE_URL ||
   "https://placehold.co/1200x800.jpg?text=Listing+Image";
 
-const resolvePublicBaseUrl = () => {
+const resolvePublicBaseUrl = (req) => {
   const envBase = process.env.PUBLIC_BASE_URL || process.env.API_BASE_URL;
 
   if (envBase) return envBase.replace(/\/$/, "");
+
+  if (req) {
+    const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+    const forwardedHost = String(req.headers["x-forwarded-host"] || "").split(",")[0].trim();
+    const host = forwardedHost || req.get("host");
+    const protocol = forwardedProto || req.protocol || "http";
+
+    if (host) return `${protocol}://${host}`.replace(/\/$/, "");
+  }
 
   const port = process.env.PORT || "5000";
   return `http://localhost:${port}`;
 };
 
-const buildImageUrl = (image) => {
+const buildImageUrl = (image, req) => {
   if (!image) return DEFAULT_IMAGE_URL;
 
   const value = String(image).trim();
@@ -32,7 +41,7 @@ const buildImageUrl = (image) => {
     return value;
   }
 
-  const baseUrl = resolvePublicBaseUrl();
+  const baseUrl = resolvePublicBaseUrl(req);
 
   // If stored as "/uploads/file.jpg"
   if (value.startsWith("/uploads/")) {

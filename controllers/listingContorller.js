@@ -95,9 +95,9 @@ const extractIncomingImage = (req) => {
   return "";
 };
 
-const formatListing = (listingDoc) => {
+const formatListing = (listingDoc, req) => {
   const listing = listingDoc.toObject ? listingDoc.toObject() : listingDoc;
-  listing.image = buildImageUrl(listing.image);
+  listing.image = buildImageUrl(listing.image, req);
   return listing;
 };
 
@@ -140,7 +140,7 @@ router.post(
         owner: req.user.id,
       });
       await listing.save();
-      res.status(201).json(formatListing(listing));
+      res.status(201).json(formatListing(listing, req));
     } catch (err) {
       console.error(err);
       res.status(500).json({ message: "Server error", error: err.message });
@@ -152,7 +152,7 @@ router.post(
 router.get("/listings", async (req, res) => {
   try {
     const listings = await Listing.find().populate("owner", "name email");
-    res.json(listings.map(formatListing));
+    res.json(listings.map((listing) => formatListing(listing, req)));
   } catch (err) {
     console.error("Error fetching listings:", err);
     res.status(500).json({ message: "Failed to fetch listings", error: err.message });
@@ -162,7 +162,7 @@ router.get("/listings", async (req, res) => {
 // GET my listings
 router.get("/my/listings", protect, async (req, res) => {
   const listings = await Listing.find({ owner: req.user.id });
-  res.json(listings.map(formatListing));
+  res.json(listings.map((listing) => formatListing(listing, req)));
 });
 
 // GET single listing by id
@@ -170,7 +170,7 @@ router.get("/listing/:id", async (req, res) => {
   try {
     const listing = await Listing.findById(req.params.id).populate("owner", "name email");
     if (!listing) return res.status(404).json({ message: "Listing not found" });
-    res.json(formatListing(listing));
+    res.json(formatListing(listing, req));
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error", error: err.message });
@@ -235,7 +235,7 @@ router.put("/update/listing/:id", protect, upload.single("image"), async (req, r
     }
 
     await listing.save();
-    res.json(formatListing(listing));
+    res.json(formatListing(listing, req));
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error", error: err.message });

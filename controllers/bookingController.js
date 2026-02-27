@@ -39,7 +39,7 @@ router.get("/my/bookings", protect, async (req, res) => {
     const formattedResult = result.map((booking) => {
       const bookingObj = booking.toObject ? booking.toObject() : booking;
       if (bookingObj.listing) {
-        bookingObj.listing.image = buildImageUrl(bookingObj.listing.image);
+        bookingObj.listing.image = buildImageUrl(bookingObj.listing.image, req);
       }
       return bookingObj;
     });
